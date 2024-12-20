@@ -1,5 +1,6 @@
 # Import the MPI module from the mpi4py library
 from mpi4py import MPI
+from unit import Unit
 
 def print_grid(grid):
     '''
@@ -12,8 +13,8 @@ def print_grid(grid):
         print(' '.join(i))
     print()
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     comm = MPI.COMM_WORLD
 
     # Get the rank (unique ID) of the current process
@@ -24,13 +25,10 @@ if __name__ == "__main__":
 
     # Define constants to be used for tags while send, receive
     GRID_TAG = 0
-    EARTH_UNIT_COORDINATES_TAG = 1
-    FIRE_UNIT_COORDINATES_TAG = 2
-    WATER_UNIT_COORDINATES_TAG = 3
-    AIR_UNIT_COORDINATES_TAG = 4
-    ROW_BOUNDS_TAG = 5
-    EXTRA_UPPER_3_ROW_TAG = 6   # From the perspective of the receiving worker process
-    EXTRA_LOWER_3_ROW_TAG = 7
+    UNIT_TAG = 1
+    ROW_BOUNDS_TAG = 2
+    EXTRA_UPPER_3_ROW_TAG = 3   # From the perspective of the receiving worker process
+    EXTRA_LOWER_3_ROW_TAG = 4
 
     if rank == 0:
         # Read information from input file
@@ -49,10 +47,7 @@ if __name__ == "__main__":
         grid = [["." for i in range(N)] for j in range(N)]
 
         # Execute simulation
-        earth_all = list()  # 2D list that contains all the earth units currently on the grid
-        fire_all = list()   # 2D list that contains all the fire units currently on the grid
-        water_all = list()
-        air_all = list()
+        units_all = list()  # List that contains all unit objects
         for i in range(W):
             # Keep current locations of each unit in each fraction
             earth_coordinates = lines[i*5+1][2:].strip().split(", ")
@@ -64,25 +59,29 @@ if __name__ == "__main__":
                 e_col = int(earth_coordinates[j][2])
                 if grid[e_row][e_col] == ".":
                     grid[e_row][e_col] = "E"
-                    earth_all.append([e_row,e_col])
+                    new_unit = Unit('earth', e_row, e_col)
+                    units_all.append(new_unit)
                 
                 f_row = int(fire_coordinates[j][0])
                 f_col = int(fire_coordinates[j][2])
                 if grid[f_row][f_col] == ".":
                     grid[f_row][f_col] = "F"
-                    fire_all.append([f_row,f_col])
+                    new_unit = Unit('fire', f_row, f_col)
+                    units_all.append(new_unit)
                 
                 w_row = int(water_coordinates[j][0])
                 w_col = int(water_coordinates[j][2])
                 if grid[w_row][w_col] == ".":
                     grid[w_row][w_col] = "W"
-                    water_all.append([w_row,w_col])
+                    new_unit = Unit('water', w_row, w_col)
+                    units_all.append(new_unit)
                 
                 a_row = int(air_coordinates[j][0])
                 a_col = int(air_coordinates[j][2])
                 if grid[a_row][a_col] == ".":
                     grid[a_row][a_col] = "A"
-                    air_all.append([a_row,a_col])
+                    new_unit = Unit('air', a_row, a_col)
+                    units_all.append(new_unit)
 
             # Execute rounds
             for j in range(R):
@@ -96,17 +95,11 @@ if __name__ == "__main__":
                     row_bounds = [upper_row_bound, lower_row_bound] # A worker process works between these row bounds
 
                     # Find which units from each faction will be in this partition
-                    earth_partition = [i for i in earth_all if upper_row_bound <= i[0] <= lower_row_bound]
-                    fire_partition = [i for i in fire_all if upper_row_bound <= i[0] <= lower_row_bound]
-                    water_partition = [i for i in water_all if upper_row_bound <= i[0] <= lower_row_bound]
-                    air_partition = [i for i in air_all if upper_row_bound <= i[0] <= lower_row_bound]
+                    units_partition = [i for i in units_all if upper_row_bound <= i.row <= lower_row_bound]
 
                     # Send grid and unit coordinates to worker process
                     comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
-                    comm.send(earth_partition, dest=k, tag=EARTH_UNIT_COORDINATES_TAG)
-                    comm.send(fire_partition, dest=k, tag=FIRE_UNIT_COORDINATES_TAG)
-                    comm.send(water_partition, dest=k, tag=WATER_UNIT_COORDINATES_TAG)
-                    comm.send(air_partition, dest=k, tag=AIR_UNIT_COORDINATES_TAG)
+                    comm.send(units_partition, dest=k, tag=UNIT_TAG)
                     comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
 
                 # Receive results from the workers and generate the final grid state
@@ -120,10 +113,7 @@ if __name__ == "__main__":
     else:
         # Receive grid partitions and unit data from the manager
         grid = comm.recv(source=0, tag=GRID_TAG)
-        earth_partition = comm.recv(source=0, tag=EARTH_UNIT_COORDINATES_TAG)         
-        fire_partition = comm.recv(source=0, tag=FIRE_UNIT_COORDINATES_TAG)         
-        water_partition = comm.recv(source=0, tag=WATER_UNIT_COORDINATES_TAG)         
-        air_partition = comm.recv(source=0, tag=AIR_UNIT_COORDINATES_TAG)
+        unit_partition = comm.recv(source=0, tag=UNIT_TAG)
         row_bounds = comm.recv(source=0, tag=ROW_BOUNDS_TAG)
 
         upper_row_bound = row_bounds[0]
