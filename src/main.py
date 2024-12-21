@@ -25,7 +25,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
     '''
     movement_list = list()
     for unit in unit_partition:
-        if unit.type == 'air':
+        if unit.unit_type == 'air':
             movement_directions = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
             max_enemy_count = 0
             initial_enemy_count = 0
@@ -308,6 +308,7 @@ if __name__ == "__main__":
     ACTIONS_FROM_LOWER_3_ROW_TAG = 11
     DEATHS_FROM_UPPER_ROW_TAG = 12
     DEATHS_FROM_LOWER_ROW_TAG = 13
+    FLOOD_TAG = 14
     # NEW_EXTRA_UPPER_3_ROW_TAG = 8   # From the perspective of the receiving worker process, new rows after air unit's windrush
     # NEW_EXTRA_LOWER_3_ROW_TAG = 9
 
@@ -445,8 +446,39 @@ if __name__ == "__main__":
                 if unit.unit_type == 'fire':
                     unit.attack_power = 4
 
-            # Water units use flood skill
+            # Reconstruct grid using unit_parition's obtained from the worker processes
+            units_all.clear()
+            for k in range(1, rank_count):
+                unit_partition = comm.recv(source=k, tag=UNIT_TAG)
+                units_all.extend(unit_partition)
 
+            grid = [[None for i in range(N)] for j in range(N)]
+            for unit in units_all:
+                grid[unit.row][unit.col] = unit
+
+            # Water units use flood skill
+            # Receive flood results from the workers and generate the updated grid state after water unit's flood
+            all_floods = list()
+            for k in range(1, rank_count):
+                flood_list = comm.recv(source=k, tag=FLOOD_TAG)
+                all_floods.extend(flood_list)
+
+            for flood in all_floods:
+                target_cell = grid[flood[0]][flood[1]]
+                
+                # No unit exists on this cell in the grid
+                if target_cell is None:
+                    # Create a new water unit due to flood
+                    grid[flood[0]][flood[1]] = Unit('water', flood[0], flood[1])
+
+            # Update units_all to hold the updated unit objects
+            units_all.clear()
+            for row in grid:
+                for col in row:
+                    if col is not None:
+                        units_all.append(col)
+
+        print_grid(grid)
 
     else:
         N = comm.recv(source=0, tag=GRID_SIZE_TAG)
@@ -653,3 +685,49 @@ if __name__ == "__main__":
                 for unit in unit_partition:
                     if unit.unit_type == 'fire':
                         unit.inferno_used = False
+
+            # Apply water faction's flood skill
+            # Acquire 1 upper and 1 lower rows from upper and lower processes respectively
+            if rank > 1:  # Has a top neighbor
+                if rank % 2 == 0:  # Even rank: Receive first, then send
+                    top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+                    comm.send(grid[0], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                else:  # Odd rank: Send first, then receive
+                    comm.send(grid[0], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                    top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+
+            if rank < rank_count - 1:  # Has a bottom neighbor
+                if rank % 2 == 0:  # Even rank: Receive first, then send
+                    bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+                    comm.send(grid[-1], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                else:  # Odd rank: Send first, then receive
+                    comm.send(grid[-1], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                    bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+
+            flood_list = list()
+            for unit in unit_partition:
+                if unit.unit_type == 'water':
+                    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)] # Lowest row and lowest column priority
+                    for direction in directions:
+                        target_row, target_col = unit.row + direction[0], unit.col + direction[1]
+                        # If candidate flood cell is in grid partition
+                        if upper_row_bound <= target_row <= lower_row_bound:
+                            if grid[target_row][target_col] is None:
+                                flood_list.append((target_row, target_col))
+                                break
+                        # If candidate flood cell is in upper process's grid
+                        elif target_row < upper_row_bound:
+                            if top_boundary[target_col] is None:
+                                flood_list.append((target_row, target_col))
+                                break
+                        # If candidate flood cell is in lower process's grid
+                        else:
+                            if bottom_boundary[target_col] is None:
+                                flood_list.append((target_row, target_col))
+                                break
+
+            # Send unit partition to master process at the end of a wave (master process will rebuild the whole grid)
+            comm.send(unit_partition, dest=0, tag=UNIT_TAG)
+
+            # Send flood locations information to master process
+            comm.send(flood_list, dest=0, tag=FLOOD_TAG)
