@@ -8,6 +8,7 @@ class Unit:
         self.attack_power = None
         self.healing_rate = None
         self.damage_taken = 0
+        self.inferno_used = False
 
         if unit_type == 'earth':
             self.max_health = 18

@@ -51,7 +51,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                     index = windrush_row - upper_row_bound
                     new_position = grid[index][windrush_col]
 
-                if new_position != None and new_position.unit_type != 'air': # This air unit can move here
+                if new_position is not None: # This air unit can not move here
                     continue
 
                 # Find out how many enemies can be attacked at the current windrush position
@@ -82,7 +82,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                             index = is_blocked_target_row - upper_row_bound
                             block_target = grid[index][is_blocked_target_col]
 
-                        if block_target != None: # Air unit's long range attack is blocked by another unit
+                        if block_target is not None: # Air unit's long range attack is blocked by another unit
                             continue
 
                     # Check if out of partition borders
@@ -99,7 +99,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                         index = target_row - upper_row_bound
                         target = grid[index][target_col]
 
-                    if target != None and target.unit_type != 'air': # Enemy found, attack
+                    if target is not None and target.unit_type != 'air': # Enemy found, attack
                         local_enemy_count += 1
 
                 # Calculate how many enemies there are prior to windrush
@@ -165,7 +165,7 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     index = target_row - upper_row_bound
                     target = grid[index][target_col]
 
-                if target != None and target.unit_type != 'earth': # Enemy found, attack
+                if target is not None and target.unit_type != 'earth': # Enemy found, attack
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
@@ -194,7 +194,7 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     index = target_row - upper_row_bound
                     target = grid[index][target_col]
 
-                if target != None and target.unit_type != 'fire': # Enemy found, attack
+                if target is not None and target.unit_type != 'fire': # Enemy found, attack
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
@@ -223,7 +223,7 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     index = target_row - upper_row_bound
                     target = grid[index][target_col]
 
-                if target != None and target.unit_type != 'water': # Enemy found, attack
+                if target is not None and target.unit_type != 'water': # Enemy found, attack
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
@@ -257,7 +257,7 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                         index = is_blocked_target_row - upper_row_bound
                         block_target = grid[index][is_blocked_target_col]
 
-                    if block_target != None: # Air unit's long range attack is blocked by another unit
+                    if block_target is not None: # Air unit's long range attack is blocked by another unit
                         continue
                     
                 # Check if out of partition borders
@@ -274,7 +274,7 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     index = target_row - upper_row_bound
                     target = grid[index][target_col]
 
-                if target != None and target.unit_type != 'air': # Enemy found, attack
+                if target is not None and target.unit_type != 'air': # Enemy found, attack
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
@@ -302,6 +302,8 @@ if __name__ == "__main__":
     GRID_SIZE_TAG = 5
     AIR_MOVEMENT_TAG = 6
     ACTION_TAG = 7
+    ROUND_COUNT_TAG = 8
+    WAVE_COUNT_TAG = 9
     # NEW_EXTRA_UPPER_3_ROW_TAG = 8   # From the perspective of the receiving worker process, new rows after air unit's windrush
     # NEW_EXTRA_LOWER_3_ROW_TAG = 9
 
@@ -318,8 +320,13 @@ if __name__ == "__main__":
         W = int(info[1])    # Number of waves
         T = int(info[2])    # Number of units per faction per wave
         R = int(info[3])    # Number of rounds per wave
+
+        # Send simulation parameters to worker processes
+        for k in range(1, rank_count):
+            comm.send(N, dest=k, tag=GRID_SIZE_TAG)
+            comm.send(R, dest=k, tag=ROUND_COUNT_TAG)
+            comm.send(W, dest=k, tag=WAVE_COUNT_TAG)
         
-        # grid = [["." for i in range(N)] for j in range(N)]
         grid = [[None for i in range(N)] for j in range(N)]
 
         # Execute simulation
@@ -333,51 +340,50 @@ if __name__ == "__main__":
             for j in range(T):
                 e_row = int(earth_coordinates[j][0])
                 e_col = int(earth_coordinates[j][2])
-                if grid[e_row][e_col] == None:
+                if grid[e_row][e_col] is None:
                     new_unit = Unit('earth', e_row, e_col)
                     grid[e_row][e_col] = new_unit
                     units_all.append(new_unit)
                 
                 f_row = int(fire_coordinates[j][0])
                 f_col = int(fire_coordinates[j][2])
-                if grid[f_row][f_col] == ".":
+                if grid[f_row][f_col] is None:
                     new_unit = Unit('fire', f_row, f_col)
                     grid[f_row][f_col] = new_unit
                     units_all.append(new_unit)
                 
                 w_row = int(water_coordinates[j][0])
                 w_col = int(water_coordinates[j][2])
-                if grid[w_row][w_col] == ".":
+                if grid[w_row][w_col] is None:
                     new_unit = Unit('water', w_row, w_col)
                     grid[w_row][w_col] = new_unit
                     units_all.append(new_unit)
                 
                 a_row = int(air_coordinates[j][0])
                 a_col = int(air_coordinates[j][2])
-                if grid[a_row][a_col] == ".":
+                if grid[a_row][a_col] is None:
                     new_unit = Unit('air', a_row, a_col)
                     grid[a_row][a_col] = new_unit
                     units_all.append(new_unit)
 
+            # Prepare grid and other data to send to each worker process
+            for k in range(1, rank_count):
+                # Find partition borders for this worker process
+                upper_row_bound = (k-1) * (N // (rank_count-1))
+                lower_row_bound = k * (N // (rank_count-1)) - 1
+                row_bounds = [upper_row_bound, lower_row_bound] # A worker process works between these row bounds
+
+                # Find which units from each faction will be in this partition
+                units_partition = [i for i in units_all if upper_row_bound <= i.row <= lower_row_bound]
+
+                # Send grid and unit coordinates to worker process
+                comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
+                comm.send(units_partition, dest=k, tag=UNIT_TAG)
+                comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
+
             # Execute rounds
             for j in range(R):
                 print(f'Round {j}:')
-
-                # Prepare grid and other data to send to each worker process
-                for k in range(1, rank_count):
-                    # Find partition borders for this worker process
-                    upper_row_bound = (k-1) * (N // (rank_count-1))
-                    lower_row_bound = k * (N // (rank_count-1)) - 1
-                    row_bounds = [upper_row_bound, lower_row_bound] # A worker process works between these row bounds
-
-                    # Find which units from each faction will be in this partition
-                    units_partition = [i for i in units_all if upper_row_bound <= i.row <= lower_row_bound]
-
-                    # Send grid and unit coordinates to worker process
-                    comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
-                    comm.send(units_partition, dest=k, tag=UNIT_TAG)
-                    comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
-                    comm.send(N, dest=k, tag=GRID_SIZE_TAG)
 
                 # Receive movement results from the workers and generate the updated grid state after air unit's windrush
                 all_movements = list()
@@ -387,7 +393,7 @@ if __name__ == "__main__":
 
                 for movement in all_movements:
                     target_cell = grid[movement[2][0]][movement[2][1]]
-                    if target_cell != None: # An air unit exists on this cell in the grid
+                    if target_cell is not None: # An air unit exists on this cell in the grid
                         # Combine health
                         tmp_health = target_cell.current_health + movement[1].current_health
                         if tmp_health > target_cell.max_health:
@@ -414,7 +420,7 @@ if __name__ == "__main__":
                 units_all.clear()
                 for row in grid:
                     for col in row:
-                        if col != None:
+                        if col is not None:
                             units_all.append(col)
 
                 # Send new grid and other data info to worker processes after air units complete their windrush
@@ -422,7 +428,6 @@ if __name__ == "__main__":
                     # Find partition borders for this worker process
                     upper_row_bound = (k-1) * (N // (rank_count-1))
                     lower_row_bound = k * (N // (rank_count-1)) - 1
-                    row_bounds = [upper_row_bound, lower_row_bound] # A worker process works between these row bounds
 
                     # Find which units from each faction will be in this partition
                     units_partition = [i for i in units_all if upper_row_bound <= i.row <= lower_row_bound]
@@ -430,24 +435,107 @@ if __name__ == "__main__":
                     # Send grid and unit coordinates to worker process
                     comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
                     comm.send(units_partition, dest=k, tag=UNIT_TAG)
-                    comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
-                    comm.send(N, dest=k, tag=GRID_SIZE_TAG)
-                
-                # Receive action results from the workers and generate the final grid state
-                all_actions = list()
-                for k in range(1, rank_count):
-                    movement_list = comm.recv(source=k, tag=ACTION_TAG)
-                    all_actions.extend(movement_list)
+
+            # At the end of a wave, reset fire unit's attack power
+            for unit in units_all:
+                if unit.unit_type == 'fire':
+                    unit.attack_power = 4
+
+            # Water units use flood skill
+
+
+    else:
+        N = comm.recv(source=0, tag=GRID_SIZE_TAG)
+        R = comm.recv(source=0, tag=ROUND_COUNT_TAG)
+        W = comm.recv(source=0, tag=WAVE_COUNT_TAG)
+
+        for i in range(W):
+            # Receive grid partitions and unit data from the manager
+            grid = comm.recv(source=0, tag=GRID_TAG)
+            unit_partition = comm.recv(source=0, tag=UNIT_TAG)
+            row_bounds = comm.recv(source=0, tag=ROW_BOUNDS_TAG)
+
+            upper_row_bound = row_bounds[0]
+            lower_row_bound = row_bounds[1]
+
+            # Boundary communication using even-odd communication scheme to avoid deadlocks
+            top_boundary = None
+            bottom_boundary = None
+            if rank > 1:  # Has a top neighbor
+                if rank % 2 == 0:  # Even rank: Receive first, then send
+                    top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+                    comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                else:  # Odd rank: Send first, then receive
+                    comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                    top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+
+            if rank < rank_count - 1:  # Has a bottom neighbor
+                if rank % 2 == 0:  # Even rank: Receive first, then send
+                    bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+                    comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                else:  # Odd rank: Send first, then receive
+                    comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                    bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+
+            for j in range(R):
+                # Calculate air unit's new positions
+                movement_list = movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N)
+                comm.send(movement_list, dest=0, tag=AIR_MOVEMENT_TAG)
+
+                # Receive new grid partitions and unit data from the manager after air's windrush
+                grid = comm.recv(source=0, tag=GRID_TAG)
+                unit_partition = comm.recv(source=0, tag=UNIT_TAG)
+
+                # Boundary communication using even-odd communication scheme to avoid deadlocks
+                top_boundary = None
+                bottom_boundary = None
+                if rank > 1:  # Has a top neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+                        comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
+                        top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
+
+                if rank < rank_count - 1:  # Has a bottom neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+                        comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
+                        bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
+
+                # Calculate actions for each unit in this partition
+                action_list = action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N)
 
                 # Calculate damages that will be taken for each unit object
-                for action in all_actions:
+                for action in action_list:
                     if action[0] == 'attack':
                         attack_power = action[1].attack_power
-                        enemy = grid[action[2][0]][action[2][1]]    # Obtain enemy object that will take the damage
-                        enemy.damage_taken = attack_power
+                        enemy_row = action[2][0]
+                        enemy_col = action[2][1]
+                        enemy = None
+
+                        # Obtain enemy object that will take the damage
+                        # Check if enemy is in extra upper 3 rows
+                        if enemy_row < upper_row_bound:
+                            index = upper_row_bound - enemy_row
+                            enemy = top_boundary[-index][enemy_col]
+
+                        # Check if enemy is in extra lower 3 rows
+                        elif enemy_row > lower_row_bound:
+                            index = enemy_row - lower_row_bound - 1
+                            enemy = bottom_boundary[index][enemy_col]
+
+                        # Check if enemy is inside grid partition of this worker process
+                        else:
+                            index = enemy_row - upper_row_bound
+                            enemy = grid[index][enemy_col]
+
+                        enemy.damage_taken += attack_power
 
                 # Deal the damages calculated
-                for unit in units_all:
+                for unit in unit_partition:
                     if unit.unit_type == 'earth':   # Fortification
                         unit.current_health -= unit.damage_taken // 2
                         unit.damage_taken = 0
@@ -456,79 +544,33 @@ if __name__ == "__main__":
                         unit.damage_taken = 0
 
                 # Kill units that have current_health <= 0
-                units_all.clear()
+                unit_partition.clear()
                 units_killed = list()   # Store units that die to apply inferno skills for fire units
-                for row in range(N):
+                for row in range(upper_row_bound, lower_row_bound + 1):
                     for col in range(N):
-                        if grid[row][col].current_health <= 0: # Kill this unit
+                        if grid[row - upper_row_bound][col].current_health <= 0: # Kill this unit
                             units_killed.append((row, col))
-                            grid[row][col] = None
+                            grid[row - upper_row_bound][col] = None
                         else:
-                            units_all.append(grid[row][col])
+                            unit_partition.append(grid[row - upper_row_bound][col])
 
-                # Apply inferno skill for fire units
-                # TODO: Increase attack power of inferno units if the unit they attacked is killed
+                for action in action_list:
+                    # Heal
+                    if action[0] == 'heal' and action[1] not in units_killed:
+                        tmp_health = action[1].current_health + action[1].healing_rate
+                        if tmp_health > action[1].max_health:
+                            tmp_health = action[1].max_health
 
-                # TODO: Apply flood skill for water units
+                        action[1].current_health = tmp_health
 
-                # TODO: Apply heal action
+                    # Apply inferno skill for fire units, increase attack power of fire units if the unit they attacked is killed
+                    elif action[0] == 'attack' and action[1].unit_type == 'fire':
+                        if action[2] in units_killed:
+                            if action[1].attack_power < 6 and not action[1].inferno_used:
+                                action[1].attack_power += 1
+                                action[1].inferno_used = True   # Increase in attack power can occur once per round per unit
 
-    else:
-        # Receive grid partitions and unit data from the manager
-        grid = comm.recv(source=0, tag=GRID_TAG)
-        unit_partition = comm.recv(source=0, tag=UNIT_TAG)
-        row_bounds = comm.recv(source=0, tag=ROW_BOUNDS_TAG)
-        N = comm.recv(source=0, tag=GRID_SIZE_TAG)
-
-        upper_row_bound = row_bounds[0]
-        lower_row_bound = row_bounds[1]
-
-        # Boundary communication using even-odd communication scheme to avoid deadlocks
-        top_boundary = None
-        bottom_boundary = None
-        if rank > 1:  # Has a top neighbor
-            if rank % 2 == 0:  # Even rank: Receive first, then send
-                top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
-                comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
-            else:  # Odd rank: Send first, then receive
-                comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
-                top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
-
-        if rank < rank_count - 1:  # Has a bottom neighbor
-            if rank % 2 == 0:  # Even rank: Receive first, then send
-                bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
-                comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
-            else:  # Odd rank: Send first, then receive
-                comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
-                bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
-
-        # Calculate air unit's new positions
-        movement_list = movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N)
-        comm.send(movement_list, dest=0, tag=AIR_MOVEMENT_TAG)
-
-         # Receive new grid partitions and unit data from the manager after air's windrush
-        grid = comm.recv(source=0, tag=GRID_TAG)
-        unit_partition = comm.recv(source=0, tag=UNIT_TAG)
-
-        # Boundary communication using even-odd communication scheme to avoid deadlocks
-        top_boundary = None
-        bottom_boundary = None
-        if rank > 1:  # Has a top neighbor
-            if rank % 2 == 0:  # Even rank: Receive first, then send
-                top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
-                comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
-            else:  # Odd rank: Send first, then receive
-                comm.send(grid[:3], dest=rank-1, tag=EXTRA_LOWER_3_ROW_TAG)
-                top_boundary = comm.recv(source=rank-1, tag=EXTRA_UPPER_3_ROW_TAG)
-
-        if rank < rank_count - 1:  # Has a bottom neighbor
-            if rank % 2 == 0:  # Even rank: Receive first, then send
-                bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
-                comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
-            else:  # Odd rank: Send first, then receive
-                comm.send(grid[-3:], dest=rank+1, tag=EXTRA_UPPER_3_ROW_TAG)
-                bottom_boundary = comm.recv(source=rank+1, tag=EXTRA_LOWER_3_ROW_TAG)
-
-        # Calculate actions for each unit in this partition
-        action_list = action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N)
-        comm.send(action_list, dest=0, tag=ACTION_TAG)
+                # At the end of a round, modify fire units so that they can use their inferno in the next round too
+                for unit in unit_partition:
+                    if unit.unit_type == 'fire':
+                        unit.inferno_used = False
