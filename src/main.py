@@ -304,6 +304,10 @@ if __name__ == "__main__":
     ACTION_TAG = 7
     ROUND_COUNT_TAG = 8
     WAVE_COUNT_TAG = 9
+    ACTIONS_FROM_UPPER_3_ROW_TAG = 10
+    ACTIONS_FROM_LOWER_3_ROW_TAG = 11
+    DEATHS_FROM_UPPER_ROW_TAG = 12
+    DEATHS_FROM_LOWER_ROW_TAG = 13
     # NEW_EXTRA_UPPER_3_ROW_TAG = 8   # From the perspective of the receiving worker process, new rows after air unit's windrush
     # NEW_EXTRA_LOWER_3_ROW_TAG = 9
 
@@ -509,30 +513,76 @@ if __name__ == "__main__":
                 action_list = action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N)
 
                 # Calculate damages that will be taken for each unit object
+
+                # Actions concerning objects that belong to another process should be stored and 
+                # sent to that process using 'comm.send' since objects are not connected between 2 different processes
+                upper_boundary_actions = list()
+                lower_boundary_actions = list()
+                for action in action_list:
+                    if action[0] == 'attack':
+                        enemy_row = action[2][0]
+                        enemy = None
+
+                        # Check if enemy is in extra upper 3 rows
+                        if enemy_row < upper_row_bound:
+                            upper_boundary_actions.append(action)
+
+                        # Check if enemy is in extra lower 3 rows
+                        elif enemy_row > lower_row_bound:
+                            lower_boundary_actions.append(action)
+
+                actions_from_upper_boundary = list()
+                actions_from_lower_boundary = list()
+
+                if rank > 1:  # Has a top neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        actions_from_upper_boundary = comm.recv(source=rank-1, tag=ACTIONS_FROM_UPPER_3_ROW_TAG)
+                        comm.send(upper_boundary_actions, dest=rank-1, tag=ACTIONS_FROM_LOWER_3_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(upper_boundary_actions, dest=rank-1, tag=ACTIONS_FROM_LOWER_3_ROW_TAG)
+                        actions_from_upper_boundary = comm.recv(source=rank-1, tag=ACTIONS_FROM_UPPER_3_ROW_TAG)
+
+                if rank < rank_count - 1:  # Has a bottom neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        actions_from_lower_boundary = comm.recv(source=rank+1, tag=ACTIONS_FROM_LOWER_3_ROW_TAG)
+                        comm.send(lower_boundary_actions, dest=rank+1, tag=ACTIONS_FROM_UPPER_3_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(lower_boundary_actions, dest=rank+1, tag=ACTIONS_FROM_UPPER_3_ROW_TAG)
+                        actions_from_lower_boundary = comm.recv(source=rank+1, tag=ACTIONS_FROM_LOWER_3_ROW_TAG)
+
+                # Calculate damages for the enemy units that were attacked by this grid's units
                 for action in action_list:
                     if action[0] == 'attack':
                         attack_power = action[1].attack_power
                         enemy_row = action[2][0]
                         enemy_col = action[2][1]
-                        enemy = None
 
                         # Obtain enemy object that will take the damage
-                        # Check if enemy is in extra upper 3 rows
-                        if enemy_row < upper_row_bound:
-                            index = upper_row_bound - enemy_row
-                            enemy = top_boundary[-index][enemy_col]
-
-                        # Check if enemy is in extra lower 3 rows
-                        elif enemy_row > lower_row_bound:
-                            index = enemy_row - lower_row_bound - 1
-                            enemy = bottom_boundary[index][enemy_col]
-
                         # Check if enemy is inside grid partition of this worker process
-                        else:
+                        if upper_row_bound <= enemy_row <= lower_row_bound:
                             index = enemy_row - upper_row_bound
                             enemy = grid[index][enemy_col]
+                            enemy.damage_taken += attack_power
 
-                        enemy.damage_taken += attack_power
+                # Calculate damages for the enemy units that were attacked by the upper grid's units
+                for action in actions_from_upper_boundary:
+                    attack_power = action[1].attack_power
+                    enemy_row = action[2][0]
+                    enemy_col = action[2][1]
+
+                    index = enemy_row - upper_row_bound
+                    enemy = grid[index][enemy_col]
+                    enemy.damage_taken += attack_power
+
+                # Calculate damages for the enemy units that were attacked by the lower grid's units
+                for action in actions_from_lower_boundary:
+                    attack_power = action[1].attack_power
+                    enemy_row = action[2][0]
+                    enemy_col = action[2][1]
+
+                    index = enemy_row - upper_row_bound
+                    enemy = grid[index][enemy_col]
+                    enemy.damage_taken += attack_power
 
                 # Deal the damages calculated
                 for unit in unit_partition:
@@ -554,9 +604,38 @@ if __name__ == "__main__":
                         else:
                             unit_partition.append(grid[row - upper_row_bound][col])
 
+                # Obtain enemies that died in upper and lower processes
+                upper_boundary_deaths = list()
+                lower_boundary_deaths = list()
+                for unit in units_killed:
+                    if unit[0] == upper_row_bound:
+                        upper_boundary_deaths.append(unit)
+
+                    elif unit[0] == lower_row_bound:
+                        lower_boundary_deaths.append(unit)
+
+                deaths_from_upper_boundary = list()
+                deaths_from_lower_boundary = list()
+
+                if rank > 1:  # Has a top neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        deaths_from_upper_boundary = comm.recv(source=rank-1, tag=DEATHS_FROM_UPPER_ROW_TAG)
+                        comm.send(upper_boundary_deaths, dest=rank-1, tag=DEATHS_FROM_LOWER_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(upper_boundary_deaths, dest=rank-1, tag=DEATHS_FROM_LOWER_ROW_TAG)
+                        deaths_from_upper_boundary = comm.recv(source=rank-1, tag=DEATHS_FROM_UPPER_ROW_TAG)
+
+                if rank < rank_count - 1:  # Has a bottom neighbor
+                    if rank % 2 == 0:  # Even rank: Receive first, then send
+                        deaths_from_lower_boundary = comm.recv(source=rank+1, tag=DEATHS_FROM_LOWER_ROW_TAG)
+                        comm.send(lower_boundary_deaths, dest=rank+1, tag=DEATHS_FROM_UPPER_ROW_TAG)
+                    else:  # Odd rank: Send first, then receive
+                        comm.send(lower_boundary_deaths, dest=rank+1, tag=DEATHS_FROM_UPPER_ROW_TAG)
+                        deaths_from_lower_boundary = comm.recv(source=rank+1, tag=DEATHS_FROM_LOWER_ROW_TAG)
+
                 for action in action_list:
                     # Heal
-                    if action[0] == 'heal' and action[1] not in units_killed:
+                    if action[0] == 'heal' and (action[1].row, action[1].col) not in units_killed:
                         tmp_health = action[1].current_health + action[1].healing_rate
                         if tmp_health > action[1].max_health:
                             tmp_health = action[1].max_health
@@ -565,7 +644,7 @@ if __name__ == "__main__":
 
                     # Apply inferno skill for fire units, increase attack power of fire units if the unit they attacked is killed
                     elif action[0] == 'attack' and action[1].unit_type == 'fire':
-                        if action[2] in units_killed:
+                        if action[2] in units_killed or action[2] in deaths_from_upper_boundary or action[2] in deaths_from_lower_boundary:
                             if action[1].attack_power < 6 and not action[1].inferno_used:
                                 action[1].attack_power += 1
                                 action[1].inferno_used = True   # Increase in attack power can occur once per round per unit
