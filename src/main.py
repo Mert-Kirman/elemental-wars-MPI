@@ -2,6 +2,7 @@
 from mpi4py import MPI
 from unit import Unit
 
+
 def print_grid(grid):
     '''
     Function that visualizes the current grid
@@ -26,7 +27,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
     movement_list = list()
     for unit in unit_partition:
         if unit.unit_type == 'air':
-            movement_directions = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+            movement_directions = [(0, 0), (-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
             max_enemy_count = 0
             initial_enemy_count = 0
             max_enemy_row = unit.row
@@ -51,7 +52,7 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                     index = windrush_row - upper_row_bound
                     new_position = grid[index][windrush_col]
 
-                if new_position is not None: # This air unit can not move here
+                if new_position is not None and movement_direction != (0, 0): # This air unit can not move here
                     continue
 
                 # Find out how many enemies can be attacked at the current windrush position
@@ -124,7 +125,9 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                         max_enemy_row = windrush_row
                         max_enemy_col = windrush_col
 
-            movement_list.append(('move', unit, (max_enemy_row, max_enemy_col)))
+            # Skip if the air unit did not move at all
+            if max_enemy_row != unit.row or max_enemy_col != unit.col:
+                movement_list.append(('move', unit, (max_enemy_row, max_enemy_col)))
 
     return movement_list
 
@@ -441,6 +444,8 @@ if __name__ == "__main__":
                     comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
                     comm.send(units_partition, dest=k, tag=UNIT_TAG)
 
+                print_grid(grid)
+
             # At the end of a wave, reset fire unit's attack power
             for unit in units_all:
                 if unit.unit_type == 'fire':
@@ -478,9 +483,9 @@ if __name__ == "__main__":
                     if col is not None:
                         units_all.append(col)
 
-            print_grid(grid)
+            # print_grid(grid)
 
-        print_grid(grid)
+        # print_grid(grid)
 
     else:
         N = comm.recv(source=0, tag=GRID_SIZE_TAG)
@@ -620,6 +625,7 @@ if __name__ == "__main__":
 
                 # Deal the damages calculated
                 for unit in unit_partition:
+                    unit = grid[unit.row - upper_row_bound][unit.col]
                     if unit.unit_type == 'earth':   # Fortification
                         unit.current_health -= unit.damage_taken // 2
                         unit.damage_taken = 0
@@ -635,6 +641,8 @@ if __name__ == "__main__":
                         if grid[row - upper_row_bound][col] is None:    # If there is no object at this location, skip
                             continue
                         if grid[row - upper_row_bound][col].current_health <= 0: # Kill this unit
+                            # if grid[row - upper_row_bound][col].unit_type == 'water':
+                            #     print(f'I am a water unit at location ({grid[row - upper_row_bound][col].row}, {grid[row - upper_row_bound][col].col})')
                             units_killed.append((row, col))
                             grid[row - upper_row_bound][col] = None
                         else:
