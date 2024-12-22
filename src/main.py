@@ -1,32 +1,18 @@
 # Import the MPI module from the mpi4py library
 from mpi4py import MPI
 from unit import Unit
+import sys
 
 
-def print_grid(grid):
-    '''
-    Function that visualizes the current grid
-    '''
-    if grid is None:
-        return
-
-    for row in grid:
-        for col in row:
-            if col == None:
-                print('. ', end="")
-            else:
-                print(f'{col.unit_type[0].capitalize()} ', end="")
-        print()
-    print()
-
-
-def write_output(grid):
+def write_output(grid, output_file):
     '''
     Function that writes a given grid to an output file
     '''
-    with open("output.txt", "w") as file:
+    with open(output_file, "w") as file:
         for row in grid:
-            file.write(' '.join(row))
+            line = ['.' if col is None else f'{col.unit_type[0].capitalize()}' for col in row]
+            file.write(' '.join(line))
+            file.write('\n')
 
 
 def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N):
@@ -323,8 +309,11 @@ if __name__ == "__main__":
     FLOOD_TAG = 14
 
     if rank == 0:
+        input_file = sys.argv[1]
+        output_file = sys.argv[2]
+
         # Read information from input file
-        with open("input1.txt", "r") as file:
+        with open(input_file, "r") as file:
             lines = file.readlines()
 
         info = lines[0].strip().split()
@@ -396,12 +385,8 @@ if __name__ == "__main__":
                 comm.send(units_partition, dest=k, tag=UNIT_TAG)
                 comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
 
-            print_grid(grid)
-
             # Execute rounds
             for j in range(R):
-                print(f'Round {j + 1}:')
-
                 # Receive movement results from the workers and generate the updated grid state after air unit's windrush
                 all_movements = list()
                 for k in range(1, rank_count):
@@ -463,8 +448,6 @@ if __name__ == "__main__":
                 for unit in units_all:
                     grid[unit.row][unit.col] = unit
 
-                print_grid(grid)
-
             # At the end of a wave, reset fire unit's attack power
             for unit in units_all:
                 if unit.unit_type == 'fire':
@@ -502,10 +485,8 @@ if __name__ == "__main__":
                     if col is not None:
                         units_all.append(col)
 
-            print_grid(grid)
-
         # Write output of the simulation
-        write_output(grid)
+        write_output(grid, output_file)
 
     else:
         N = comm.recv(source=0, tag=GRID_SIZE_TAG)
@@ -646,7 +627,6 @@ if __name__ == "__main__":
                 # Deal the damages calculated
                 for unit in unit_partition:
                     unit = grid[unit.row - upper_row_bound][unit.col]
-                    print(f'This is wave {i + 1}, round {j + 1}; I am a {unit.unit_type} unit at location ({unit.row}, {unit.col}). My health is = {unit.current_health}, damage taken = {unit.damage_taken}')
                     if unit.unit_type == 'earth':   # Fortification
                         unit.current_health -= unit.damage_taken // 2
                         unit.damage_taken = 0
