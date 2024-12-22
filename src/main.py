@@ -12,9 +12,9 @@ def print_grid(grid):
     for row in grid:
         for col in row:
             if col == None:
-                print('. ')
+                print('. ', end="")
             else:
-                print(f'{col.unit_type[0]} ')
+                print(f'{col.unit_type[0].capitalize()} ', end="")
         print()
     print()
 
@@ -68,8 +68,8 @@ def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_ro
                     # Check if air unit's long range attack is blocked by another unit
                     if attack_direction[0] in [-2, 2] or attack_direction[1] in [-2, 2]:
                         block_target = None
-                        is_blocked_target_row = attack_direction[0] // 2
-                        is_blocked_target_col = attack_direction[1] // 2
+                        is_blocked_target_row = windrush_row + attack_direction[0] // 2
+                        is_blocked_target_col = windrush_col +  attack_direction[1] // 2
                         if is_blocked_target_row < upper_row_bound:
                             index = upper_row_bound - is_blocked_target_row
                             block_target = top_boundary[-index][is_blocked_target_col]
@@ -243,8 +243,8 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                 # Check if air unit's long range attack is blocked by another unit
                 if attack_direction[0] in [-2, 2] or attack_direction[1] in [-2, 2]:
                     block_target = None
-                    is_blocked_target_row = attack_direction[0] // 2
-                    is_blocked_target_col = attack_direction[1] // 2
+                    is_blocked_target_row = unit.row + attack_direction[0] // 2
+                    is_blocked_target_col = unit.col + attack_direction[1] // 2
                     if is_blocked_target_row < upper_row_bound:
                         index = upper_row_bound - is_blocked_target_row
                         block_target = top_boundary[-index][is_blocked_target_col]
@@ -478,6 +478,8 @@ if __name__ == "__main__":
                     if col is not None:
                         units_all.append(col)
 
+            print_grid(grid)
+
         print_grid(grid)
 
     else:
@@ -630,6 +632,8 @@ if __name__ == "__main__":
                 units_killed = list()   # Store units that die to apply inferno skills for fire units
                 for row in range(upper_row_bound, lower_row_bound + 1):
                     for col in range(N):
+                        if grid[row - upper_row_bound][col] is None:    # If there is no object at this location, skip
+                            continue
                         if grid[row - upper_row_bound][col].current_health <= 0: # Kill this unit
                             units_killed.append((row, col))
                             grid[row - upper_row_bound][col] = None
@@ -712,7 +716,7 @@ if __name__ == "__main__":
                         target_row, target_col = unit.row + direction[0], unit.col + direction[1]
                         # If candidate flood cell is in grid partition
                         if upper_row_bound <= target_row <= lower_row_bound:
-                            if grid[target_row][target_col] is None:
+                            if grid[target_row - upper_row_bound][target_col] is None:
                                 flood_list.append((target_row, target_col))
                                 break
                         # If candidate flood cell is in upper process's grid
