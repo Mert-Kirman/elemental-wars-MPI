@@ -389,9 +389,11 @@ if __name__ == "__main__":
                 comm.send(units_partition, dest=k, tag=UNIT_TAG)
                 comm.send(row_bounds, dest=k, tag=ROW_BOUNDS_TAG)
 
+            print_grid(grid)
+
             # Execute rounds
             for j in range(R):
-                print(f'Round {j}:')
+                print(f'Round {j + 1}:')
 
                 # Receive movement results from the workers and generate the updated grid state after air unit's windrush
                 all_movements = list()
@@ -444,6 +446,16 @@ if __name__ == "__main__":
                     comm.send(grid[upper_row_bound:lower_row_bound + 1], dest=k, tag=GRID_TAG)
                     comm.send(units_partition, dest=k, tag=UNIT_TAG)
 
+                # Receive updated grid info from worker processes at the end of each round and reconstruct it
+                units_all.clear()
+                for k in range(1, rank_count):
+                    unit_partition = comm.recv(source=k, tag=UNIT_TAG)
+                    units_all.extend(unit_partition)
+
+                grid = [[None for i in range(N)] for j in range(N)]
+                for unit in units_all:
+                    grid[unit.row][unit.col] = unit
+
                 print_grid(grid)
 
             # At the end of a wave, reset fire unit's attack power
@@ -483,7 +495,7 @@ if __name__ == "__main__":
                     if col is not None:
                         units_all.append(col)
 
-            # print_grid(grid)
+            print_grid(grid)
 
         # print_grid(grid)
 
@@ -626,6 +638,7 @@ if __name__ == "__main__":
                 # Deal the damages calculated
                 for unit in unit_partition:
                     unit = grid[unit.row - upper_row_bound][unit.col]
+                    print(f'This is wave {i + 1}, round {j + 1}; I am a {unit.unit_type} unit at location ({unit.row}, {unit.col}). My health is = {unit.current_health}, damage taken = {unit.damage_taken}')
                     if unit.unit_type == 'earth':   # Fortification
                         unit.current_health -= unit.damage_taken // 2
                         unit.damage_taken = 0
@@ -642,7 +655,7 @@ if __name__ == "__main__":
                             continue
                         if grid[row - upper_row_bound][col].current_health <= 0: # Kill this unit
                             # if grid[row - upper_row_bound][col].unit_type == 'water':
-                            #     print(f'I am a water unit at location ({grid[row - upper_row_bound][col].row}, {grid[row - upper_row_bound][col].col})')
+                            #     print(f'This is wave {i + 1}, round {j + 1}; I am a water unit at location ({grid[row - upper_row_bound][col].row}, {grid[row - upper_row_bound][col].col}). My health is = {grid[row - upper_row_bound][col].current_health}, damage taken = {grid[row - upper_row_bound][col].damage_taken}')
                             units_killed.append((row, col))
                             grid[row - upper_row_bound][col] = None
                         else:
@@ -697,6 +710,9 @@ if __name__ == "__main__":
                 for unit in unit_partition:
                     if unit.unit_type == 'fire':
                         unit.inferno_used = False
+
+                # Send updated grid info (damages dealt) to master process via unit_partition
+                comm.send(unit_partition, dest=0, tag=UNIT_TAG)
 
             # Apply water faction's flood skill
             # Acquire 1 upper and 1 lower rows from upper and lower processes respectively
