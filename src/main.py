@@ -20,6 +20,15 @@ def print_grid(grid):
     print()
 
 
+def write_output(grid):
+    '''
+    Function that writes a given grid to an output file
+    '''
+    with open("output.txt", "w") as file:
+        for row in grid:
+            file.write(' '.join(row))
+
+
 def movement_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_bound, lower_row_bound, N):
     '''
     Function that moves air units to an adjacent empty cell based on their
@@ -172,8 +181,8 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
-                if not enemy_found: # Skip (heal the unit)
-                    action_list.append(('heal', unit))
+            if not enemy_found: # Skip (heal the unit)
+                action_list.append(('heal', unit))
 
         elif unit.unit_type == 'fire':
             attack_directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]  # Directions a fire unit can attack
@@ -201,8 +210,8 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
-                if not enemy_found: # Skip (heal the unit)
-                    action_list.append(('heal', unit))
+            if not enemy_found: # Skip (heal the unit)
+                action_list.append(('heal', unit))
 
         elif unit.unit_type == 'water':
             attack_directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]  # Directions a water unit can attack
@@ -230,8 +239,8 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
-                if not enemy_found: # Skip (heal the unit)
-                    action_list.append(('heal', unit))
+            if not enemy_found: # Skip (heal the unit)
+                action_list.append(('heal', unit))
 
         elif unit.unit_type == 'air':
             attack_directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1), 
@@ -281,8 +290,8 @@ def action_phase(grid, unit_partition, top_boundary, bottom_boundary, upper_row_
                     enemy_found = True
                     action_list.append(('attack', unit, (target_row, target_col)))
 
-                if not enemy_found: # Skip (heal the unit)
-                    action_list.append(('heal', unit))
+            if not enemy_found: # Skip (heal the unit)
+                action_list.append(('heal', unit))
 
     return action_list
 
@@ -312,8 +321,6 @@ if __name__ == "__main__":
     DEATHS_FROM_UPPER_ROW_TAG = 12
     DEATHS_FROM_LOWER_ROW_TAG = 13
     FLOOD_TAG = 14
-    # NEW_EXTRA_UPPER_3_ROW_TAG = 8   # From the perspective of the receiving worker process, new rows after air unit's windrush
-    # NEW_EXTRA_LOWER_3_ROW_TAG = 9
 
     if rank == 0:
         # Read information from input file
@@ -497,7 +504,8 @@ if __name__ == "__main__":
 
             print_grid(grid)
 
-        # print_grid(grid)
+        # Write output of the simulation
+        write_output(grid)
 
     else:
         N = comm.recv(source=0, tag=GRID_SIZE_TAG)
@@ -654,8 +662,6 @@ if __name__ == "__main__":
                         if grid[row - upper_row_bound][col] is None:    # If there is no object at this location, skip
                             continue
                         if grid[row - upper_row_bound][col].current_health <= 0: # Kill this unit
-                            # if grid[row - upper_row_bound][col].unit_type == 'water':
-                            #     print(f'This is wave {i + 1}, round {j + 1}; I am a water unit at location ({grid[row - upper_row_bound][col].row}, {grid[row - upper_row_bound][col].col}). My health is = {grid[row - upper_row_bound][col].current_health}, damage taken = {grid[row - upper_row_bound][col].damage_taken}')
                             units_killed.append((row, col))
                             grid[row - upper_row_bound][col] = None
                         else:
@@ -693,18 +699,27 @@ if __name__ == "__main__":
                 for action in action_list:
                     # Heal
                     if action[0] == 'heal' and (action[1].row, action[1].col) not in units_killed:
-                        tmp_health = action[1].current_health + action[1].healing_rate
-                        if tmp_health > action[1].max_health:
-                            tmp_health = action[1].max_health
+                        unit = grid[action[1].row - upper_row_bound][action[1].col]
+                        tmp_health = unit.current_health + unit.healing_rate
+                        if tmp_health > unit.max_health:
+                            tmp_health = unit.max_health
 
-                        action[1].current_health = tmp_health
+                        unit.current_health = tmp_health
 
                     # Apply inferno skill for fire units, increase attack power of fire units if the unit they attacked is killed
                     elif action[0] == 'attack' and action[1].unit_type == 'fire':
                         if action[2] in units_killed or action[2] in deaths_from_upper_boundary or action[2] in deaths_from_lower_boundary:
-                            if action[1].attack_power < 6 and not action[1].inferno_used:
-                                action[1].attack_power += 1
-                                action[1].inferno_used = True   # Increase in attack power can occur once per round per unit
+                            unit = grid[action[1].row - upper_row_bound][action[1].col]
+                            if unit.attack_power < 6 and not unit.inferno_used:
+                                unit.attack_power += 1
+                                unit.inferno_used = True   # Increase in attack power can occur once per round per unit
+
+                # Reconstruct unit partition after healing units that skipped and modifying attack power of fire units
+                unit_partition.clear()
+                for row in range(upper_row_bound, lower_row_bound + 1):
+                    for col in range(N):
+                        if grid[row - upper_row_bound][col] is not None:
+                            unit_partition.append(grid[row - upper_row_bound][col])
 
                 # At the end of a round, modify fire units so that they can use their inferno in the next round too
                 for unit in unit_partition:
