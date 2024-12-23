@@ -342,29 +342,33 @@ if __name__ == "__main__":
             water_coordinates = lines[i*5+3][2:].strip().split(", ")
             air_coordinates = lines[i*5+4][2:].strip().split(", ")
             for j in range(T):
-                e_row = int(earth_coordinates[j][0])
-                e_col = int(earth_coordinates[j][2])
+                earth_coordinate = earth_coordinates[j].split()
+                e_row = int(earth_coordinate[0])
+                e_col = int(earth_coordinate[1])
                 if grid[e_row][e_col] is None:
                     new_unit = Unit('earth', e_row, e_col)
                     grid[e_row][e_col] = new_unit
                     units_all.append(new_unit)
                 
-                f_row = int(fire_coordinates[j][0])
-                f_col = int(fire_coordinates[j][2])
+                fire_coordinate = fire_coordinates[j].split()
+                f_row = int(fire_coordinate[0])
+                f_col = int(fire_coordinate[1])
                 if grid[f_row][f_col] is None:
                     new_unit = Unit('fire', f_row, f_col)
                     grid[f_row][f_col] = new_unit
                     units_all.append(new_unit)
                 
-                w_row = int(water_coordinates[j][0])
-                w_col = int(water_coordinates[j][2])
+                water_coordinate = water_coordinates[j].split()
+                w_row = int(water_coordinate[0])
+                w_col = int(water_coordinate[1])
                 if grid[w_row][w_col] is None:
                     new_unit = Unit('water', w_row, w_col)
                     grid[w_row][w_col] = new_unit
                     units_all.append(new_unit)
                 
-                a_row = int(air_coordinates[j][0])
-                a_col = int(air_coordinates[j][2])
+                air_coordinate = air_coordinates[j].split()
+                a_row = int(air_coordinate[0])
+                a_col = int(air_coordinate[1])
                 if grid[a_row][a_col] is None:
                     new_unit = Unit('air', a_row, a_col)
                     grid[a_row][a_col] = new_unit
